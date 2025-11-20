@@ -54,8 +54,7 @@ class CoinbaseIngestor:
                     key_serializer=lambda k: k.encode('utf-8') if k else None,
                     acks='all',
                     retries=3,
-                    max_in_flight_requests_per_connection=1,
-                    enable_idempotence=True
+                    max_in_flight_requests_per_connection=1
                 )
                 logger.info(f"Kafka producer initialized: {self.bootstrap_servers}")
                 return
