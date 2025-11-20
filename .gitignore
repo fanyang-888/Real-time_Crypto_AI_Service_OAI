@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data
+data/*.csv
+!data/.gitkeep
+
+# Models
+models/*.pkl
+models/*.joblib
+models/*.bin
+
+# MLflow
+mlruns/
+mlflow.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+

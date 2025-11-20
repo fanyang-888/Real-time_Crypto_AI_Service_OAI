@@ -1,0 +1,170 @@
+version: '3.8'
+
+services:
+  # Kafka/Redpanda - Lightweight Kafka alternative
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr
+      - internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr
+      - internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr
+      - internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr
+      - redpanda:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+      - --smp
+      - '1'
+      - --memory
+      - 1G
+      - --mode
+      - dev-container
+      - --default-log-level=info
+    ports:
+      - "18081:18081"
+      - "18082:18082"
+      - "19092:19092"
+      - "19644:9644"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # MLflow Tracking Server
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.8.1
+    container_name: mlflow
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:///mlflow.db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlflow.db
+    depends_on:
+      - redpanda
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # FastAPI Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: crypto-api
+    ports:
+      - "8000:8000"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MODEL_VARIANT=${MODEL_VARIANT:-ml}
+      - MODEL_NAME=${MODEL_NAME:-crypto_volatility_model}
+      - MODEL_VERSION=${MODEL_VERSION:-latest}
+    volumes:
+      - ./models:/app/models
+      - ./src:/app/src
+    depends_on:
+      - mlflow
+      - redpanda
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Ingestor (Producer)
+  ingestor:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingestor
+    container_name: crypto-ingestor
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-coinbase-trades}
+      - REPLAY_SPEED=${REPLAY_SPEED:-1}
+      - DATA_FILE=/app/data/replay_10min.csv
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+    depends_on:
+      - redpanda
+    restart: unless-stopped
+
+  # Feature Service (Consumer)
+  feature-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.feature-service
+    container_name: crypto-feature-service
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-coinbase-trades}
+      - KAFKA_PREDICTION_TOPIC=${KAFKA_PREDICTION_TOPIC:-predictions}
+      - WINDOW_SIZE=${WINDOW_SIZE:-50}
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      - redpanda
+      - api
+    restart: unless-stopped
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  redpanda-data:
+  mlflow-data:
+  prometheus-data:
+  grafana-data:
+

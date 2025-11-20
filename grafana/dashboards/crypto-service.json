@@ -1,0 +1,52 @@
+{
+  "dashboard": {
+    "title": "Crypto AI Service Dashboard",
+    "panels": [
+      {
+        "title": "Request Latency (p50/p95/p99)",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
+            "legendFormat": "p50 {{endpoint}}"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
+            "legendFormat": "p95 {{endpoint}}"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
+            "legendFormat": "p99 {{endpoint}}"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "targets": [
+          {
+            "expr": "sum(rate(prediction_errors_total[5m])) by (model_variant, error_type)",
+            "legendFormat": "{{model_variant}} - {{error_type}}"
+          }
+        ]
+      },
+      {
+        "title": "Request Throughput",
+        "targets": [
+          {
+            "expr": "sum(rate(prediction_requests_total[5m])) by (model_variant)",
+            "legendFormat": "{{model_variant}}"
+          }
+        ]
+      },
+      {
+        "title": "Kafka Consumer Lag",
+        "targets": [
+          {
+            "expr": "kafka_consumer_lag",
+            "legendFormat": "{{topic}} - partition {{partition}}"
+          }
+        ]
+      }
+    ]
+  }
+}
+
